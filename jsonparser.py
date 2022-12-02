@@ -4,6 +4,7 @@ import os
 import time
 import datetime
 import sys
+import re
 
 # This datatype defines a single speak instance. By extracting all the speak instances in our data into a giant list of these,
 # it makes it easier to write new functions to analyze the data.
@@ -22,33 +23,21 @@ class speakInstance:
 # Takes in a list of json files, performs the parsing and data organization, and writes the output to a xlsx file.
 # Add custom functions for new types of data orginization in the indicated block below and save their output to the
 # excel_sheets dictionary along with the name of the sheet you want the data to be written to.
-def generate_output(json_files):
-    parsed_jsons, roomnames = parse_jsons(json_files)
+def generate_output(speak_instances, roomnames, jsonname):
 
-    # make our giant list of speak instances
-    all_speak_instances = []
-    print("Parsing json files...")
-    for df in parsed_jsons:
-        all_speak_instances += get_speak_instances_from_json(df)
-    
     #######################################
     # Place functions for generating output here.
     # Be sure to add the output to excel_sheets in the format key=sheetname, value=dataframe
 
     excel_sheets = {}
 
-    print("Generating speak instances by group...")
-    excel_sheets['Speak Instances By Group'] = organize_by_group(all_speak_instances, roomnames)
-
-    # generate dataframe of total speaker times organized by group
-    print("Generating total speaker times...")
-    excel_sheets['Speaker Totals'] = total_speaker_times(all_speak_instances, roomnames)
+    excel_sheets['Speak Instances By Group'] = organize_by_group(speak_instances, roomnames)
+    excel_sheets['Speaker Totals'] = total_speaker_times(speak_instances, roomnames)
 
     ########################################
 
     # Write the output to a xlsx file
-    print("Writing output to xlsx...")
-    filename = check_for_existing_file("output")
+    filename = check_for_existing_file(jsonname)
     writer = pd.ExcelWriter(filename)
 
     for sheetname, data in excel_sheets.items():
@@ -59,35 +48,17 @@ def generate_output(json_files):
 
     return filename
 
-# Grab all json files in the same folder as the script. Optional override_path argument can be used to get files from a different
-# folder.
-def grab_json_files(override_path=""):
-    
-    if override_path != "":
-        path = override_path
-    else:
-        path = os.getcwd()
+def main():
+    json_files, names = grab_json_files()
 
-    print("Searching " + path + " for json files\n")
-    json_files = glob.glob(os.path.join(path, "*.json"))
+    parsed_jsons, roomnames = parse_jsons(json_files)
 
-    #check that there are in fact some files to parse
-    if len(json_files) == 0:
-        print("No json files found in the current directory. Exiting.")
-        time.sleep(2.5)
-        sys.exit()
+    for i in range(len(json_files)):
+        speak_instances = get_speak_instances_from_json(parsed_jsons[i])
+        filename = generate_output(speak_instances, roomnames[i], names[i])
 
-    return json_files
-    
-def __main__():
-    json_files = grab_json_files()
-    filename = generate_output(json_files)
-    print ("\nData saved to " +  filename + ". Exiting...")
+    print("\nData saved to " +  filename + ". Exiting...")
     time.sleep(1.5)
-
-if __name__ == "__main__":
-    __main__()
-
 
 ########################################
 # Data organization functions
@@ -101,11 +72,9 @@ def organize_by_group(all_speak_instances, roomnames):
     out = pd.DataFrame()
 
     # sort the list of speak instances by start time. 
-    print("Sorting speak instances by start time...")
     all_speak_instances.sort(key=lambda x: x.start)
 
     # iterate over our many rooms, using list comprehensions to add the relevant data to our output dataframe
-    print("Generating group-organized output...")
     for room in roomnames:
         # get the speak instances we care about create a dataframe to store this group's data in. We use this intermediate dataframe because
         # pandas is a bit annoying about adding new rows to a dataframe.
@@ -168,6 +137,33 @@ def total_speaker_times(all_speak_instances, roomnames):
 # Helper functions
 ########################################
 
+# Grab all json files in the same folder as the script. Optional override_path argument can be used to get files from a different
+# folder.
+def grab_json_files(override_path=""):
+    
+    jsonnames = []
+
+    if override_path != "":
+        path = override_path
+    else:
+        path = os.getcwd()
+
+    print("Searching " + path + " for json files\n")
+    json_files = glob.glob(os.path.join(path, "*.json"))
+
+    # grab the filenames we find. There is probably a more efficent way to do this but here we are
+    for filepath in json_files:
+        n = re.search(r".+\\([^\.]+)", filepath)
+        jsonnames.append(n.group(1))
+
+    #check that there are in fact some files to parse
+    if len(json_files) == 0:
+        print("No json files found in the current directory. Exiting.")
+        time.sleep(2.5)
+        sys.exit()
+
+    return json_files, jsonnames
+
 # Takes in a list of json files paths and return a list of pandas dataframes containing the userdata from each json
 # organized in rows by room and a list of all roomnames parsed from the json files.
 def parse_jsons(json_files):
@@ -188,7 +184,7 @@ def parse_jsons(json_files):
             parsed_jsons.append(df_userdata)
 
             #add the room names to our list of roomnames
-            roomnames += list(df_roomdata['name'])[0:]
+            roomnames.append(list(df_roomdata['name'])[0:])
             
 
     return parsed_jsons, roomnames
@@ -226,3 +222,9 @@ def check_for_existing_file(filename):
             i+=1
     else:
         return filename + ".xlsx"
+
+########################################
+# Execution statement
+########################################
+if __name__ == "__main__":
+    main()
