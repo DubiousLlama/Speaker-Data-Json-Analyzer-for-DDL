@@ -3,7 +3,7 @@
 ## Overview 
 Written for https://cdd.stanford.edu/.
 
-Drop this script in the same folder as any number of deliberation jsons you would like to analyze for speaker data.
+Drop this script in the same folder as any number of deliberation JSONs you would like to analyze for speaker data.
 By default, it is configured to produce a xlsx workbook with two sheets: one catalouging the length of every speak instance in every group, and the other catalouging the total speaking times by speaker in every group.
 
 ## Troubleshooting
