@@ -111,6 +111,7 @@ def total_speaker_times(all_speak_instances, roomnames):
 
         # this will hold a tuple with the speaker's name and uid as the key, and a float for their total speak time as the value
         totalspeaklengths = {}
+        numspeaktimes = {}
         
         # Get the total time each speaker spoke in the room
         for speak in speaksinroom:
@@ -119,6 +120,12 @@ def total_speaker_times(all_speak_instances, roomnames):
             else:
                 totalspeaklengths[(speak.uid, speak.speaker)] = speak.length
 
+        for speak in speaksinroom:
+            if (speak.uid, speak.speaker) in numspeaktimes.keys():
+                numspeaktimes[(speak.uid, speak.speaker)] += 1
+            else:
+                numspeaktimes[(speak.uid, speak.speaker)] = 1
+
         newelems = pd.DataFrame(index=range(len(totalspeaklengths)))
 
         # append the info to our intermediate dataframe
@@ -126,6 +133,7 @@ def total_speaker_times(all_speak_instances, roomnames):
         newelems["DisplayName_" + room] = list(map(lambda x: x[1], displayorder))
         newelems["ParticipantID_" + room] = list(map(lambda x: x[0], displayorder))
         newelems["TotalSpeakTime_" + room] = [convert_to_minsecs(totalspeaklengths[x]) for x in displayorder]
+        newelems["NumSpeaks_" + room] = [numspeaktimes[x] for x in displayorder]
 
         # concatenate the intermediate dataframe to our output dataframe
         out = pd.concat([out, newelems], axis=1)
