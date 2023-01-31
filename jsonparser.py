@@ -10,14 +10,23 @@ import re
 # it makes it easier to write new functions to analyze the data.
 class speakInstance:
     def __init__(self, group, speaker, uid, speakBlock):
-        speakBlock = dict(speakBlock)
-        self.uid = uid
-        self.start = speakBlock['speakTime']
-        self.end = speakBlock['finishTime']
-        self.requestTime = speakBlock['requestTime']
-        self.length = self.end-self.start
-        self.speaker = speaker
-        self.group = group
+        if speakBlock == 0:
+            self.uid = uid
+            self.start = 0
+            self.end = 0
+            self.requestTime = None
+            self.length = 0
+            self.speaker = speaker
+            self.group = group
+        else:
+            speakBlock = dict(speakBlock)
+            self.uid = uid
+            self.start = speakBlock['speakTime']
+            self.end = speakBlock['finishTime']
+            self.requestTime = speakBlock['requestTime']
+            self.length = self.end-self.start
+            self.speaker = speaker
+            self.group = group
 
 
 # Takes in a list of json files, performs the parsing and data organization, and writes the output to a xlsx file.
@@ -54,7 +63,7 @@ def main():
     parsed_jsons, roomnames = parse_jsons(json_files)
 
     for i in range(len(json_files)):
-        speak_instances = get_speak_instances_from_json(parsed_jsons[i])
+        speak_instances = get_speak_instances_from_json(parsed_jsons[i], ['Record'])
         filename = generate_output(speak_instances, roomnames[i], names[i])
 
     print("\nData saved to " +  filename + ". Exiting...")
@@ -78,7 +87,7 @@ def organize_by_group(all_speak_instances, roomnames):
     for room in roomnames:
         # get the speak instances we care about create a dataframe to store this group's data in. We use this intermediate dataframe because
         # pandas is a bit annoying about adding new rows to a dataframe.
-        speaksinroom = [x for x in all_speak_instances if x.group == room]
+        speaksinroom = [x for x in all_speak_instances if (x.group == room and x.length > 0)]
         newelems = pd.DataFrame(index=range(len(speaksinroom)))
 
         # debug code for ensuring proper ordering of speaks
@@ -121,10 +130,14 @@ def total_speaker_times(all_speak_instances, roomnames):
                 totalspeaklengths[(speak.uid, speak.speaker)] = speak.length
 
         for speak in speaksinroom:
-            if (speak.uid, speak.speaker) in numspeaktimes.keys():
-                numspeaktimes[(speak.uid, speak.speaker)] += 1
+            if speak.length > 0:
+                if (speak.uid, speak.speaker) in numspeaktimes.keys():
+                    numspeaktimes[(speak.uid, speak.speaker)] += 1
+                else:
+                    numspeaktimes[(speak.uid, speak.speaker)] = 1
             else:
-                numspeaktimes[(speak.uid, speak.speaker)] = 1
+                if (speak.uid, speak.speaker) not in numspeaktimes.keys():
+                    numspeaktimes[(speak.uid, speak.speaker)] = 0
 
         newelems = pd.DataFrame(index=range(len(totalspeaklengths)))
 
@@ -206,12 +219,14 @@ def get_speak_instances_from_json(df, exclude_speakers=[]):
     for room in df['room']:
         for col in df.columns[1:]:
             user = df[col][i]
-            if (user != None) and (not user in exclude_speakers):
+            if (user != None) and (not user['screenName'] in exclude_speakers):
                 user = dict(user)
                 speakBlocks = list(user['speakBlocks'])
                 if speakBlocks:
                     for block in speakBlocks:
                         speak_instances.append(speakInstance(room, user['screenName'], user['id'], block))
+                if user['id']:
+                    speak_instances.append(speakInstance(room, user['screenName'], user['id'], 0))
         i+=1
     return speak_instances
 
