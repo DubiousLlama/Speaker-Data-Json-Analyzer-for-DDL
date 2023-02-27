@@ -60,10 +60,10 @@ def generate_output(speak_instances, roomnames, jsonname, users, flags):
 def main():
     json_files, names = grab_json_files()
 
-    parsed_jsons, roomnames = parse_jsons(json_files)
-    transcriptDatas, roomnames = parse_jsons_for_transcriptData(json_files)
+    parsed_jsons, roomnames, names = parse_jsons(json_files, names)
+    transcriptDatas, roomnames, names = parse_jsons_for_transcriptData(json_files, names)
 
-    for i in range(len(json_files)):
+    for i in range(len(parsed_jsons)):
         flags = generateAbuseFlags(transcriptDatas[i])
         users = generateConnectedTimes(parsed_jsons[i])
         speak_instances = get_speak_instances_from_json(parsed_jsons[i], ['Record'])
@@ -88,6 +88,7 @@ def organize_by_group(all_speak_instances, roomnames):
 
     # iterate over our many rooms, using list comprehensions to add the relevant data to our output dataframe
     for room in roomnames:
+        room = str(room)
         # get the speak instances we care about create a dataframe to store this group's data in. We use this intermediate dataframe because
         # pandas is a bit annoying about adding new rows to a dataframe.
         speaksinroom = [x for x in all_speak_instances if (x.group == room and x.length > 0)]
@@ -188,30 +189,42 @@ def grab_json_files(override_path=""):
 
     return json_files, jsonnames
 
+def nameFromPath(path):
+    n = re.search(r".+\\([^\.]+)", path)
+    return n.group(1)
+
 # Takes in a list of json files paths and return a list of pandas dataframes containing the userdata from each json
 # organized in rows by room and a list of all roomnames parsed from the json files.
-def parse_jsons(json_files):
+def parse_jsons(json_files, names):
     parsed_jsons = []
     roomnames = []
 
     #loop through each file and parse the json data
+    i = 0
     for file in json_files:
         with open(file, 'r', encoding='utf-8', errors="replace") as json_file:
-            print("Parsing " + file + "...")
+            print("Searching for abuse flags in " + file + "...")
             df = pd.read_json(json_file)
 
             #this is a bit messy, but it makes the first row of our output dataframes the room the data corresponds to.
             df_roomdata = pd.json_normalize(df['roomData'])
-            df_userdata = pd.json_normalize(df['userData'])
+            try:
+                df_userdata = pd.json_normalize(df['userData'])
+            except:
+                print("File " + file + " contains no user data.")
+                if nameFromPath(file) in names:
+                    print("popped " + file + " td")
+                    names.remove(nameFromPath(file))
+                continue
             df_userdata.insert(0,'room','')
             df_userdata['room'] = df_roomdata['name']
             parsed_jsons.append(df_userdata)
 
             #add the room names to our list of roomnames
             roomnames.append(list(df_roomdata['name'])[0:])
-            
+        i+=1 
 
-    return parsed_jsons, roomnames
+    return parsed_jsons, roomnames, names
 
 # Takes in a pandas dataframe resulting from a single deliberation and turns it into a list of speak instances.
 # The optional exclude argument can be used to exclude a list of users from the list of speak instances (such as admins, in 
@@ -287,6 +300,7 @@ def organize_connectedtimes_by_group(users, roomnames):
 
     # iterate over our many rooms, using list comprehensions to add the relevant data to our output dataframe
     for room in roomnames:
+        room = str(room)
         # get the users we care about and create a dataframe to store this group's data in. We use this intermediate dataframe because
         # pandas is a bit annoying about adding new rows to a dataframe.
         distimesinroom = [x for x in users if x.room == room]
@@ -317,11 +331,12 @@ class AbuseFlag:
 
 
 # find transcriptData 
-def parse_jsons_for_transcriptData(json_files):
+def parse_jsons_for_transcriptData(json_files, names):
     parsed_jsons = []
     roomnames = []
 
     #loop through each file and parse the json data
+    i = 0
     for file in json_files:
         with open(file, 'r', encoding='utf-8', errors="replace") as json_file:
             print("Parsing " + file + "...")
@@ -329,16 +344,23 @@ def parse_jsons_for_transcriptData(json_files):
 
             #this is a bit messy, but it makes the first row of our output dataframes the room the data corresponds to.
             df_roomdata = pd.json_normalize(df['roomData'])
-            df_transcriptdata = pd.json_normalize(df['transcriptData'])
+            try:
+                df_transcriptdata = pd.json_normalize(df['userData'])
+            except:
+                print("File " + file + " contains no user data.")
+                if nameFromPath(file) in names:
+                    print("popped " + file + " td")
+                    names.remove(nameFromPath(file))
+                continue
             df_transcriptdata.insert(0,'room','')
             df_transcriptdata['room'] = df_roomdata['name']
             parsed_jsons.append(df_transcriptdata)
 
             #add the room names to our list of roomnames
             roomnames.append(list(df_roomdata['name'])[0:])
-            
+        i+=1        
 
-    return parsed_jsons, roomnames
+    return parsed_jsons, roomnames, names
 
 #find abuse flags
 def generateAbuseFlags(df):
@@ -349,8 +371,9 @@ def generateAbuseFlags(df):
             transcriptEvent = df[col][i]
             if transcriptEvent:
                 transcriptEvent = dict(transcriptEvent)
-                if transcriptEvent['type'] == 'abusiveLanguage':
-                    flags.append(AbuseFlag(room, transcriptEvent['t']))
+                if 'type' in transcriptEvent.keys():
+                    if transcriptEvent['type'] == 'abusiveLanguage':
+                        flags.append(AbuseFlag(room, transcriptEvent['t']))
         i+=1
     return flags
 
