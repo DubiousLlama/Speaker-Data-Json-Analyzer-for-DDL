@@ -3,7 +3,6 @@ import time
 import os, sys
 import json
 import glob
-import re
 import datetime
 
 class participant_groupLevel:
@@ -32,8 +31,6 @@ class group:
         self.speakingTime = 0
 
 def grab_json_files(override_path=""):
-    
-    jsonnames = []
 
     if override_path != "":
         path = override_path
@@ -41,12 +38,8 @@ def grab_json_files(override_path=""):
         path = os.getcwd()
 
     print("Searching " + path + " for json files\n")
-    json_files = glob.glob(os.path.join(path, "*.json"))
-
-    # grab the filenames we find. There is probably a more efficent way to do this but here we are
-    for filepath in json_files:
-        n = re.search(r".+\\([^\.]+)", filepath)
-        jsonnames.append(n.group(1))
+    folder = path + "/*.json"
+    json_files = glob.glob(folder)
 
     #check that there are in fact some files to parse
     if len(json_files) == 0:
@@ -54,7 +47,7 @@ def grab_json_files(override_path=""):
         time.sleep(2.5)
         sys.exit()
 
-    return json_files, jsonnames
+    return json_files
 
 def grab_data_from_file(json_files):
 
@@ -75,6 +68,9 @@ def grab_data_from_file(json_files):
                     print("Skipped room " +  roomName + " because it has no users")
                     continue
 
+                if roomName not in group_list.keys():
+                    group_list[roomName] = group(roomName)
+                
                 for user in room["userData"]:
 
                     if user["id"] not in participants.keys():
@@ -94,16 +90,9 @@ def grab_data_from_file(json_files):
                         if time:
                             person.groups[roomName].speakCount += 1
                             person.groups[roomName].speakTime += time
-                            if roomName not in group_list.keys():
-                                group_list[roomName] = group(roomName)
-                                group_list[roomName].speakingTime += time
-                            else:
-                                group_list[roomName].speakingTime += time
+                            group_list[roomName].speakingTime += time
                 
-                for item in room["transcriptData"]:
-                    if item["type"] ==  "connect" and group_list[roomName].startTime == 0:
-                        group_list[roomName].startTime = item["t"]
-                    
+                for item in room["transcriptData"]:                    
                     if item["type"] == "submitQuestion":
                         person = item["userId"]
                         participants[person].groups[roomName].wroteQuestions += 1
@@ -113,13 +102,14 @@ def grab_data_from_file(json_files):
                         participants[person].groups[roomName].numVotesForQuestions += 1
 
                     if item["type"] == "moderator":
-                        if item["text"] == "Deliberation ends":
-                            group_list[roomName].endTime = item["t"]
+                        if "text" in item.keys():
+                            if item["text"] == "Deliberation ends":
+                                group_list[roomName].endTime = item["t"]
+                            if item["text"] == "Introductions":
+                                group_list[roomName].startTime = item["t"]
 
-                        if item["text"] == "Introductions":
-                            group_list[roomName].startTime = item["t"]
-                            
-                                  
+                        
+                                    
                 for item in room["pollData"].values():
                     if item["type"] == "advanceAgenda":
                         initator = item["data"]["from"]
@@ -132,7 +122,7 @@ def convert_to_minsecs(length):
     d = datetime.timedelta(milliseconds=length)
     return str(d)[:7]
 
-def generate_output(participants, groups):
+def generate_output(participants, groups, folder):
     df = pd.DataFrame(columns="Uid, _Name, Group, YeasMoveOn, NaysMoveOn, MoveOnInitiations, QuestionsWritten, VotesForQuestions, SpeakCount, SpeakTime, groupDelibTime, groupSpeakingTime".split(", "))
 
     for person in participants.values():
@@ -144,10 +134,8 @@ def generate_output(participants, groups):
                                      str(convert_to_minsecs(group.speakTime)), 
                                      str(convert_to_minsecs(groups[group.group].endTime - groups[group.group].startTime)), 
                                      str(convert_to_minsecs(groups[group.group].speakingTime))]
-            
-    folder_name=os.path.basename(os.path.normpath(os.getcwd()))
     
-    df.to_csv("metaverse_" + folder_name + "_long.csv", index=True, encoding='utf-8-sig')
+    df.to_csv("metaverse_" + folder + "_long.csv", index=True, encoding='utf-8-sig')
     df = df.sort_values(by='Group')
 
     wdf = pd.pivot(df, index='Uid', columns='Group')
@@ -155,14 +143,29 @@ def generate_output(participants, groups):
     wdf.columns = wdf.columns.swaplevel(0, 1)  # Swap the levels of multiindex columns
     wdf = wdf.sort_index(axis=1, level=0)
 
-    wdf.to_csv("metaverse_" + folder_name + "_wide.csv", index=True, encoding='utf-8-sig')
+    wdf.to_csv("metaverse_" + folder + "_wide.csv", index=True, encoding='utf-8-sig')
+    print("Saved data for " + folder)
 
 def main():
-    json_files, names = grab_json_files()
 
-    participants, groups = grab_data_from_file(json_files)
+    # Specify the directory path
+    directory_path = os.getcwd()
 
-    generate_output(participants, groups)
+    # List all items in the directory
+    all_items = os.listdir(directory_path)
+
+    # Iterate through the items and filter out folders
+    for item in all_items:
+        # Create the full path to the item
+        full_path = os.path.join(directory_path, item)
+        
+        # Check if it is a directory
+        if os.path.isdir(full_path):
+            json_files = grab_json_files(full_path)
+
+            participants, groups = grab_data_from_file(json_files)
+
+            generate_output(participants, groups, item)
 
     print("Data saved. Exiting...")
     time.sleep(1.5)
